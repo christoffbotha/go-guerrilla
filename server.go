@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -68,18 +69,19 @@ type allowedHosts struct {
 type command []byte
 
 var (
-	cmdHELO     command = []byte("HELO")
-	cmdEHLO     command = []byte("EHLO")
-	cmdHELP     command = []byte("HELP")
-	cmdXCLIENT  command = []byte("XCLIENT")
-	cmdMAIL     command = []byte("MAIL FROM:")
-	cmdRCPT     command = []byte("RCPT TO:")
-	cmdRSET     command = []byte("RSET")
-	cmdVRFY     command = []byte("VRFY")
-	cmdNOOP     command = []byte("NOOP")
-	cmdQUIT     command = []byte("QUIT")
-	cmdDATA     command = []byte("DATA")
-	cmdSTARTTLS command = []byte("STARTTLS")
+	cmdHELO      command = []byte("HELO")
+	cmdEHLO      command = []byte("EHLO")
+	cmdHELP      command = []byte("HELP")
+	cmdXCLIENT   command = []byte("XCLIENT")
+	cmdMAIL      command = []byte("MAIL FROM:")
+	cmdRCPT      command = []byte("RCPT TO:")
+	cmdRSET      command = []byte("RSET")
+	cmdVRFY      command = []byte("VRFY")
+	cmdNOOP      command = []byte("NOOP")
+	cmdQUIT      command = []byte("QUIT")
+	cmdDATA      command = []byte("DATA")
+	cmdSTARTTLS  command = []byte("STARTTLS")
+	cmdAUTHLOGIN command = []byte("AUTH LOGIN")
 )
 
 func (c command) match(in []byte) bool {
@@ -521,10 +523,15 @@ func (server *server) handleClient(client *client) {
 				client.sendResponse(response.Canned.SuccessDataCmd)
 				client.state = ClientData
 
+			case cmdAUTHLOGIN.match(cmd):
+				client.sendResponse(response.Canned.PromptAuthLoginUsername)
+				client.state = ClientAuthLogin
+
 			case sc.TLS.StartTLSOn && cmdSTARTTLS.match(cmd):
 
 				client.sendResponse(response.Canned.SuccessStartTLSCmd)
 				client.state = ClientStartTLS
+
 			default:
 				client.errors++
 				if client.errors >= MaxUnrecognizedCommands {
@@ -533,6 +540,34 @@ func (server *server) handleClient(client *client) {
 				} else {
 					client.sendResponse(response.Canned.FailUnrecognizedCmd)
 				}
+			}
+
+		// TODO consider replacing 'hasAuthLoginUser' bool flag with two client states.
+		case ClientAuthLogin:
+			if !client.hasAuthLoginUser {
+				user, err := client.smtpReader.ReadLine()
+				if err != nil {
+					server.log().WithError(err).Warn("Error reading username")
+					client.resetTransaction()
+					break
+				}
+				userDec, _ := base64.StdEncoding.DecodeString(user)
+				server.log().Debugf("Read username: %s", userDec)
+				client.sendResponse(response.Canned.PromptAuthLoginPassword)
+				client.hasAuthLoginUser = true
+			} else {
+				password, err := client.smtpReader.ReadLine()
+				if err != nil {
+					server.log().WithError(err).Warn("Error reading password")
+					client.resetTransaction()
+					break
+				}
+				server.log().Debug("Read password.")
+				_ = password
+				// TODO validate credentials
+				client.sendResponse(response.Canned.SuccessAuthLogin)
+				client.state = ClientCmd
+				client.hasAuthLoginUser = false
 			}
 
 		case ClientData:
@@ -587,6 +622,7 @@ func (server *server) handleClient(client *client) {
 			}
 			// change to command state
 			client.state = ClientCmd
+
 		case ClientShutdown:
 			// shutdown state
 			client.sendResponse(response.Canned.ErrorShutdown)

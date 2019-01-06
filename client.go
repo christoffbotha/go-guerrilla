@@ -6,14 +6,15 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/flashmob/go-guerrilla/log"
-	"github.com/flashmob/go-guerrilla/mail"
-	"github.com/flashmob/go-guerrilla/mail/rfc5321"
-	"github.com/flashmob/go-guerrilla/response"
 	"net"
 	"net/textproto"
 	"sync"
 	"time"
+
+	"github.com/flashmob/go-guerrilla/log"
+	"github.com/flashmob/go-guerrilla/mail"
+	"github.com/flashmob/go-guerrilla/mail/rfc5321"
+	"github.com/flashmob/go-guerrilla/response"
 )
 
 // ClientState indicates which part of the SMTP transaction a given client is in.
@@ -30,6 +31,8 @@ const (
 	ClientStartTLS
 	// Server will shutdown, client to shutdown on next command turn
 	ClientShutdown
+	// We shall now capture auth login details
+	ClientAuthLogin
 )
 
 type client struct {
@@ -50,9 +53,10 @@ type client struct {
 	smtpReader *textproto.Reader
 	ar         *adjustableLimitedReader
 	// guards access to conn
-	connGuard sync.Mutex
-	log       log.Logger
-	parser    rfc5321.Parser
+	connGuard        sync.Mutex
+	log              log.Logger
+	parser           rfc5321.Parser
+	hasAuthLoginUser bool
 }
 
 // NewClient allocates a new client.
@@ -117,6 +121,7 @@ func (c *client) sendResponse(r ...interface{}) {
 // -End of DATA command
 // TLS handhsake
 func (c *client) resetTransaction() {
+	c.hasAuthLoginUser = false
 	c.Envelope.ResetTransaction()
 }
 

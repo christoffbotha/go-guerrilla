@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/base64"
 	"fmt"
 )
 
@@ -144,6 +145,10 @@ type Responses struct {
 	ErrorRelayDenied       *Response
 	ErrorShutdown          *Response
 
+	// The 300's
+	PromptAuthLoginUsername *Response
+	PromptAuthLoginPassword *Response
+
 	// The 200's
 	SuccessMailCmd       *Response
 	SuccessRcptCmd       *Response
@@ -154,6 +159,7 @@ type Responses struct {
 	SuccessDataCmd       *Response
 	SuccessStartTLSCmd   *Response
 	SuccessMessageQueued *Response
+	SuccessAuthLogin     *Response
 }
 
 // Called automatically during package load to build up the Responses struct
@@ -351,6 +357,20 @@ func init() {
 		Comment:      "User unknown in local recipient table",
 	}
 
+	Canned.PromptAuthLoginUsername = &Response{
+		cached: fmt.Sprintf("334 %s", base64.StdEncoding.EncodeToString([]byte("Username:"))),
+	}
+
+	Canned.PromptAuthLoginPassword = &Response{
+		cached: fmt.Sprintf("334 %s", base64.StdEncoding.EncodeToString([]byte("Password:"))),
+	}
+
+	Canned.SuccessAuthLogin = &Response{
+		EnhancedCode: OtherOrUndefinedSecurityStatus,
+		BasicCode:    235,
+		Class:        ClassSuccess,
+		Comment:      "Authentication successful",
+	}
 }
 
 // DefaultMap contains defined default codes (RfC 3463)
@@ -395,6 +415,7 @@ const (
 	ConversionRequiredButNotSupported       = ".6.3"
 	ConversionWithLossPerformed             = ".6.4"
 	ConversionFailed                        = ".6.5"
+	OtherOrUndefinedSecurityStatus          = ".7.0"
 )
 
 var defaultTexts = struct {
